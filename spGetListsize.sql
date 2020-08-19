@@ -32,7 +32,7 @@ SELECT
 ,gender_concept_id
 ,ethnic_code_concept_id
 ,episode_of_care_id   
-,regstatus_description   
+--,regstatus_description   
 ,date_registered
 ,date_registered_end
 ,ods_code
@@ -49,18 +49,23 @@ SELECT
 	 ,p.date_of_birth
 	 ,p.gender_concept_id
 	 ,p.ethnic_code_concept_id
-     ,regs.description regstatus_description   
+	 ,e.registration_status_concept_id regstatus
+     --,regs.description regstatus_description   
      ,e.date_registered
      ,e.date_registered_end	 
      ,ceg.ods_code
      ,ceg.report_name
 	 ,ceg.ccg_ods
-	 ,ROW_NUMBER() OVER (PARTITION BY p.person_id ORDER BY date_registered DESC) as rownum
+	/*Some persons have 2+ current reg patient records, due to registration errors or in the process of changing practices.
+	To filter for most recent registration, need to Partition.*/
+	-- ,ROW_NUMBER() OVER (PARTITION BY p.person_id ORDER BY date_registered DESC) as rownum
     -- ,ROW_NUMBER() OVER (PARTITION BY patient_id ORDER BY date_registered DESC) as rownum
 
 
    FROM compass_gp.dbo.patient p
     INNER JOIN compass_gp.dbo.[episode_of_care] e ON e.patient_id = p.id -- 
+	/* EMIS uses Reg Status to filter to Current Register. Monthly extract from EMIS means this is not up-to-date.
+		Field is not fully populated - 54258 patients with eoc.registration_status null 26/06/2020 */
     INNER JOIN [db_lookup].[gp].[regstatus] regs ON e.registration_status_concept_id = regs.dbid
     INNER JOIN [db_lookup].[gp].[regtype] regt ON e.registration_type_concept_id = regt.dbid
     INNER JOIN [db_lookup].[gp].[ceg_gppractices] ceg ON e.organization_id = ceg.organization_id
@@ -78,8 +83,7 @@ SELECT
      )
     AND ceg.status = 'A'      -- Active organisations
     AND regt.code = 'R'       -- Reg Type = Regular
-    AND 
-		regs.active_reg = 1   -- Reg Status = a registered GP Links Status
+    AND regs.active_reg = 1   -- Reg Status = a registered GP Links Status
 		-- e.registration_status_concept_id between 1335286 and 1335290 -- alt lookup direct from episode of care
 			/*Registered (1335286),
 			Medical Record sent by FHSA (1335287),
@@ -91,11 +95,18 @@ SELECT
       OR 
       p.date_of_death > @RelRunDate -- patient died after @RelRunDate (EMIS is, we believe more absolute and does not include this filter)
      )
+	AND e.id >= 
+       (SELECT 
+              MAX(e2.id)
+       FROM compass_gp.dbo.[episode_of_care] e2
+       INNER JOIN compass_gp.dbo.patient p on p.id = e2.patient_id
+       INNER JOIN [db_lookup].[gp].[regtype] regt2 ON e.registration_type_concept_id = regt2.dbid
+       WHERE p.date_of_death IS NULL
+              AND regt.code = 'R'
+              AND e2.date_registered <= @RelRunDate
+              AND (e2.date_registered_end > @RelRunDate or e2.date_registered_end IS NULL)
+              AND e2.patient_id = e.patient_id)
 )AS CurReg
+ --  WHERE rownum = 1 -- latest registration
+ END
 
-  WHERE
-   rownum = 1 -- latest registration
-
-
-
-END
