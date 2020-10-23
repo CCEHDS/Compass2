@@ -50,4 +50,9 @@ CROSS APPLY STRING_SPLIT([Ruleset_s],'|')
 WHERE [Type_of_inclusion_in_code_string] = 'Refset'
 -- GROUP BY value, Cluster_ID, Included_Under
 -- ORDER BY Service, Ruleset, Cluster_ID
-) AS X;
+) AS X
+ORDER BY Service, Ruleset, Cluster_ID
+;
+ 
+CREATE CLUSTERED INDEX idx_rulsetclusterid
+ON codesets.dbo.codeset_PCD (ruleset, cluster_id);
