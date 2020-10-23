@@ -1,0 +1,53 @@
+USE snomedct;
+
+SELECT X.*
+INTO codesets.dbo.codeset_PCD
+FROM
+(
+SELECT
+	'PC refset' as refset_type
+	,LEFT(TRIM(value),CHARINDEX(' ',TRIM(value))) as service 
+	-- ,REVERSE(PARSENAME(REPLACE(REVERSE(TRIM(value)),' ','.'),1)) as service -- alternative method
+	,SUBSTRING(TRIM(value),CHARINDEX(' ',TRIM(value)),50) as ruleset
+	,Cluster_ID as cluster_id
+	,[Cluster_description] as cluster_description
+	,CASE 
+		WHEN LEFT(TRIM(value),CHARINDEX(' ',TRIM(value))) = 'QOF' THEN '45' 
+		ELSE ''
+		END
+		as cluster_version
+	,PCD_Refset_ID as refset_id
+	,[SNOMED_code] as sn_code
+	,[SNOMED_code_description] as code_description
+		,sctc.ACTIVE as active_status
+	,c.dbid
+FROM [snomedct].[dbo].[PCD_Refset_Content] refc
+LEFT JOIN db_lookup.im.concept c ON c.code COLLATE DATABASE_DEFAULT = refc.SNOMED_code
+LEFT JOIN snomedct.[dbo].[SCT_CONCEPT] sctc ON sctc.ID = refc.SNOMED_code
+CROSS APPLY STRING_SPLIT([Service_and_Ruleset],'|')
+-- GROUP BY value, Cluster_ID, PCD_Refset_ID
+-- ORDER BY Service, Ruleset, Cluster_ID
+
+UNION
+
+SELECT
+	[Type_of_inclusion_in_code_string] as refset_type
+	,'QOF' as service 
+	,LEFT(TRIM(value),CHARINDEX('(',TRIM(value))-2) as ruleset
+	,Cluster_ID as cluster_id
+	,[Cluster_description] as cluster_description
+	,'45' as cluster_version
+	,RIGHT(Included_Under,LEN(Included_Under)-1) as refset_id
+	,[SNOMED_concept_ID] as sn_code
+	,[Code_description] as code_description
+	,sctc.ACTIVE as active_status
+	,c.dbid
+FROM [analysis_ceg].[dbo].[QOFv45] qof
+LEFT JOIN db_lookup.im.concept c ON c.code = cast(qof.SNOMED_concept_ID as varchar(40))
+LEFT JOIN snomedct.[dbo].[SCT_CONCEPT] sctc ON sctc.ID = qof.SNOMED_concept_ID
+CROSS APPLY STRING_SPLIT([Ruleset_s],'|')
+-- WHERE dbid is null
+WHERE [Type_of_inclusion_in_code_string] = 'Refset'
+-- GROUP BY value, Cluster_ID, Included_Under
+-- ORDER BY Service, Ruleset, Cluster_ID
+) AS X;
